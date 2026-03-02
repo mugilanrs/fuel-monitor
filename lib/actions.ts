@@ -1,30 +1,39 @@
 "use server";
 
-import { readEntries, writeEntries } from "./blob-storage";
 import { generateId, type FuelEntry } from "./csv-utils";
 
+/**
+ * TEMPORARY in-memory storage.
+ * This resets on each server restart.
+ * Used only to stabilize deployment.
+ */
+
+let memoryStore: FuelEntry[] = [];
+
 export async function getEntries(): Promise<FuelEntry[]> {
-  return readEntries();
+  return memoryStore;
 }
 
 export async function addEntry(
   data: Omit<FuelEntry, "id" | "price_per_liter">
 ): Promise<FuelEntry[]> {
-  const entries = await readEntries();
-  const pricePerLiter = data.liters > 0 ? data.amount / data.liters : 0;
+  const pricePerLiter =
+    data.liters > 0 ? parseFloat((data.amount / data.liters).toFixed(2)) : 0;
+
   const newEntry: FuelEntry = {
     ...data,
     id: generateId(),
-    price_per_liter: parseFloat(pricePerLiter.toFixed(2)),
+    price_per_liter: pricePerLiter,
   };
-  entries.push(newEntry);
-  await writeEntries(entries);
-  return entries;
+
+  memoryStore.push(newEntry);
+  return memoryStore;
 }
 
-export async function updateEntry(updated: FuelEntry): Promise<FuelEntry[]> {
-  const entries = await readEntries();
-  const index = entries.findIndex((e) => e.id === updated.id);
+export async function updateEntry(
+  updated: FuelEntry
+): Promise<FuelEntry[]> {
+  const index = memoryStore.findIndex((e) => e.id === updated.id);
   if (index === -1) throw new Error("Entry not found");
 
   updated.price_per_liter =
@@ -32,23 +41,25 @@ export async function updateEntry(updated: FuelEntry): Promise<FuelEntry[]> {
       ? parseFloat((updated.amount / updated.liters).toFixed(2))
       : 0;
 
-  entries[index] = updated;
-  await writeEntries(entries);
-  return entries;
+  memoryStore[index] = updated;
+  return memoryStore;
 }
 
 export async function deleteEntry(id: string): Promise<FuelEntry[]> {
-  const entries = await readEntries();
-  const filtered = entries.filter((e) => e.id !== id);
-  await writeEntries(filtered);
-  return filtered;
+  memoryStore = memoryStore.filter((e) => e.id !== id);
+  return memoryStore;
 }
 
-export async function saveAllEntries(entries: FuelEntry[]): Promise<FuelEntry[]> {
-  const recalculated = entries.map((e) => ({
+export async function saveAllEntries(
+  entries: FuelEntry[]
+): Promise<FuelEntry[]> {
+  memoryStore = entries.map((e) => ({
     ...e,
-    price_per_liter: e.liters > 0 ? parseFloat((e.amount / e.liters).toFixed(2)) : 0,
+    price_per_liter:
+      e.liters > 0
+        ? parseFloat((e.amount / e.liters).toFixed(2))
+        : 0,
   }));
-  await writeEntries(recalculated);
-  return recalculated;
+
+  return memoryStore;
 }
